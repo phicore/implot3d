@@ -156,6 +156,8 @@ enum ImPlot3DStyleVar_ {
     ImPlot3DStyleVar_LegendPadding,      // ImVec2, legend padding from plot edges
     ImPlot3DStyleVar_LegendInnerPadding, // ImVec2, legend inner padding from legend edges
     ImPlot3DStyleVar_LegendSpacing,      // ImVec2, spacing between legend entries
+    // View style
+    ImPlot3DStyleVar_ViewScaleFactor,    // float, scale factor for 3D view/plot box
     ImPlot3DStyleVar_COUNT
 };
 
@@ -818,6 +820,8 @@ struct ImPlot3DStyle {
     ImVec2 LegendPadding;      // Legend padding from plot edges
     ImVec2 LegendInnerPadding; // Legend inner padding from legend edges
     ImVec2 LegendSpacing;      // Spacing between legend entries
+    // View style
+    float ViewScaleFactor;     // Scale factor for 3D view/plot box
     // Colors
     ImVec4 Colors[ImPlot3DCol_COUNT];
     inline ImVec4 GetColor(ImPlot3DCol idx) const { return Colors[idx]; }
