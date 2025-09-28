@@ -737,6 +737,84 @@ void DemoAxisConstraints() {
     }
 }
 
+void DemoPlotFlags() {
+    static ImPlot3DFlags flags = ImPlot3DFlags_None;
+    
+    ImGui::Text("Plot Flags:");
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_NoTitle);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Hide plot title");
+    }
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_NoLegend);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Hide plot legend");
+    }
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_NoMouseText);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Hide mouse position in plot coordinates");
+    }
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_NoClip);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Disable 3D box clipping");
+    }
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_NoMenus);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The user will not be able to open context menus");
+    }
+    
+    CHECKBOX_FLAG(flags, ImPlot3DFlags_Equal);
+    ImGui::SameLine(); 
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("X, Y, and Z axes will be constrained to have the same units/pixel");
+    }
+    
+    if (ImPlot3D::BeginPlot("Plot Flags Demo", ImVec2(-1, 0), flags)) {
+        ImPlot3D::SetupAxes("X-axis", "Y-axis", "Z-axis");
+        ImPlot3D::SetupAxesLimits(-5, 5, -5, 5, -5, 5);
+        
+        // Generate some sample data for demonstration
+        static float x[100], y[100], z[100];
+        static bool first = true;
+        if (first) {
+            for (int i = 0; i < 100; i++) {
+                float t = i * 0.1f;
+                x[i] = 3.0f * cosf(t);
+                y[i] = 3.0f * sinf(t);
+                z[i] = t - 5.0f;
+            }
+            first = false;
+        }
+        
+        ImPlot3D::PlotLine("Helix", x, y, z, 100);
+        
+        // Add some scatter points to show equal scaling effect
+        float scatter_x[8] = {-4, 4, -4, 4, -4, 4, -4, 4};
+        float scatter_y[8] = {-4, -4, 4, 4, -4, -4, 4, 4};
+        float scatter_z[8] = {-4, -4, -4, -4, 4, 4, 4, 4};
+        ImPlot3D::PlotScatter("Cube corners", scatter_x, scatter_y, scatter_z, 8);
+        
+        ImPlot3D::EndPlot();
+    }
+    
+    ImGui::TextWrapped("Try zooming and panning with the Equal flag enabled to see how all axes maintain the same scale!");
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] Custom
 //-----------------------------------------------------------------------------
@@ -885,6 +963,7 @@ void ShowAllDemos() {
             DemoHeader("Box Rotation", DemoBoxRotation);
             DemoHeader("Tick Labels", DemoTickLabels);
             DemoHeader("Axis Constraints", DemoAxisConstraints);
+            DemoHeader("Plot Flags", DemoPlotFlags);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Custom")) {
