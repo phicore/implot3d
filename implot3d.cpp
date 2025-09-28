@@ -2365,7 +2365,7 @@ static const ImPlot3DStyleVarInfo GPlot3DStyleVarInfo[] = {
     {ImGuiDataType_Float, 2, (ImU32)offsetof(ImPlot3DStyle, LegendSpacing)},      // ImPlot3DStyleVar_LegendSpacing
 
     // View style
-    {ImGuiDataType_Float, 1, (ImU32)offsetof(ImPlot3DStyle, ViewScaleFactor)},    // ImPlot3DStyleVar_ViewScaleFactor
+    {ImGuiDataType_Float, 1, (ImU32)offsetof(ImPlot3DStyle, ViewScaleFactor)}, // ImPlot3DStyleVar_ViewScaleFactor
 };
 
 static const ImPlot3DStyleVarInfo* GetPlotStyleVarInfo(ImPlot3DStyleVar idx) {
@@ -3394,8 +3394,8 @@ void ImPlot3DPlot::SetRange(const ImPlot3DPoint& min, const ImPlot3DPoint& max) 
     Axes[2].SetRange(min.z, max.z);
 }
 
-float ImPlot3DPlot::GetViewScale() const { 
-    return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 2.2f * ImPlot3D::GImPlot3D->Style.ViewScaleFactor; 
+float ImPlot3DPlot::GetViewScale() const {
+    return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 1.8f * ImPlot3D::GImPlot3D->Style.ViewScaleFactor;
 }
 
 //-----------------------------------------------------------------------------
@@ -3414,12 +3414,11 @@ ImPlot3DStyle::ImPlot3DStyle() {
     PlotMinSize = ImVec2(200, 200);
     PlotPadding = ImVec2(10, 10);
     LabelPadding = ImVec2(5, 5);
+    ViewScaleFactor = 1.0f;
     // Legend style
     LegendPadding = ImVec2(10, 10);
     LegendInnerPadding = ImVec2(5, 5);
     LegendSpacing = ImVec2(5, 0);
-    // View style
-    ViewScaleFactor = 1.0f;
     // Colors
     ImPlot3D::StyleColorsAuto(this);
     Colormap = ImPlot3DColormap_Deep;
