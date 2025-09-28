@@ -2229,6 +2229,17 @@ void HandleInput(ImPlot3DPlot& plot) {
                     if (!plot.Axes[i].IsInputLocked()) {
                         plot.Axes[i].SetMin(new_min);
                         plot.Axes[i].SetMax(new_max);
+
+                        // Apply equal aspect ratio constraint immediately
+                        const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+                        if (axis_equal) {
+                            double aspect = plot.Axes[i].GetAspect();
+                            for (int j = 0; j < 3; j++) {
+                                if (j != i && plot.Axes[j].Hovered && !plot.Axes[j].IsInputLocked()) {
+                                    plot.Axes[j].SetAspect(aspect);
+                                }
+                            }
+                        }
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2237,33 +2248,6 @@ void HandleInput(ImPlot3DPlot& plot) {
                 if (!any_axis_held) {
                     plot.HeldEdgeIdx = hovered_edge_idx;
                     plot.HeldPlaneIdx = hovered_plane_idx;
-                }
-            }
-        }
-    }
-
-    // Handle equal aspect ratio constraint
-    const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
-    if (axis_equal) {
-        bool any_axis_held = plot.Axes[0].Held || plot.Axes[1].Held || plot.Axes[2].Held;
-        if (any_axis_held) {
-            // Find the aspect ratio of the held axis
-            double target_aspect = 0.0;
-            int held_axis = -1;
-            for (int i = 0; i < 3; i++) {
-                if (plot.Axes[i].Held) {
-                    held_axis = i;
-                    target_aspect = plot.Axes[i].GetAspect();
-                    break;
-                }
-            }
-
-            // Apply the same aspect ratio to the other axes that are hovered
-            if (held_axis != -1) {
-                for (int i = 0; i < 3; i++) {
-                    if (i != held_axis && plot.Axes[i].Hovered && !plot.Axes[i].IsInputLocked()) {
-                        plot.Axes[i].SetAspect(target_aspect);
-                    }
                 }
             }
         }
