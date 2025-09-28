@@ -740,8 +740,6 @@ void DemoAxisConstraints() {
 void DemoPlotFlags() {
     static ImPlot3DFlags flags = ImPlot3DFlags_None;
 
-    ImGui::Text("Plot Flags:");
-
     CHECKBOX_FLAG(flags, ImPlot3DFlags_NoTitle);
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
@@ -811,8 +809,6 @@ void DemoPlotFlags() {
 
         ImPlot3D::EndPlot();
     }
-
-    ImGui::TextWrapped("Try zooming and panning with the Equal flag enabled to see how all axes maintain the same scale!");
 }
 
 //-----------------------------------------------------------------------------
@@ -946,6 +942,8 @@ void ShowAllDemos() {
     ImGui::Spacing();
     if (ImGui::BeginTabBar("ImPlot3DDemoTabs")) {
         if (ImGui::BeginTabItem("Plots")) {
+            // Plot Types
+            ImGui::SeparatorText("Plot Types");
             DemoHeader("Line Plots", DemoLinePlots);
             DemoHeader("Scatter Plots", DemoScatterPlots);
             DemoHeader("Triangle Plots", DemoTrianglePlots);
@@ -954,6 +952,10 @@ void ShowAllDemos() {
             DemoHeader("Mesh Plots", DemoMeshPlots);
             DemoHeader("Realtime Plots", DemoRealtimePlots);
             DemoHeader("Image Plots", DemoImagePlots);
+
+            // Plot Options
+            ImGui::SeparatorText("Plot Options");
+            DemoHeader("Plot Flags", DemoPlotFlags);
             DemoHeader("Markers and Text", DemoMarkersAndText);
             DemoHeader("NaN Values", DemoNaNValues);
             ImGui::EndTabItem();
@@ -963,7 +965,6 @@ void ShowAllDemos() {
             DemoHeader("Box Rotation", DemoBoxRotation);
             DemoHeader("Tick Labels", DemoTickLabels);
             DemoHeader("Axis Constraints", DemoAxisConstraints);
-            DemoHeader("Plot Flags", DemoPlotFlags);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Custom")) {
