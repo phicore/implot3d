@@ -3406,23 +3406,24 @@ void ImPlot3DAxis::ApplyFit() {
 void ImPlot3DAxis::SetAspect(double unit_per_pix) {
     // Get plot context to access plot dimensions
     ImPlot3DContext& gp = *ImPlot3D::GImPlot3D;
-    if (gp.CurrentPlot == nullptr) return;
-    
+    if (gp.CurrentPlot == nullptr)
+        return;
+
     // Calculate new size based on aspect ratio and pixel size
     // For 3D, we use the diagonal of the plot area as a reference
     float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
     float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
     float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
-    
+
     double new_size = unit_per_pix * plot_diag * 0.5; // Scale factor for 3D
     double delta = (new_size - Range.Size()) * 0.5;
-    
+
     if (IsLocked())
         return;
     else if (IsLockedMin() && !IsLockedMax())
-        SetRange(Range.Min, Range.Max + 2*delta);
+        SetRange(Range.Min, Range.Max + 2 * delta);
     else if (!IsLockedMin() && IsLockedMax())
-        SetRange(Range.Min - 2*delta, Range.Max);
+        SetRange(Range.Min - 2 * delta, Range.Max);
     else
         SetRange(Range.Min - delta, Range.Max + delta);
 }
@@ -3430,14 +3431,16 @@ void ImPlot3DAxis::SetAspect(double unit_per_pix) {
 double ImPlot3DAxis::GetAspect() const {
     // Get plot context to access plot dimensions
     ImPlot3DContext& gp = *ImPlot3D::GImPlot3D;
-    if (gp.CurrentPlot == nullptr) return 1.0;
-    
+    if (gp.CurrentPlot == nullptr)
+        return 1.0;
+
     // Calculate aspect ratio as units per pixel
     float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
     float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
     float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
-    
-    if (plot_diag == 0.0f) return 1.0;
+
+    if (plot_diag == 0.0f)
+        return 1.0;
     return Range.Size() / (plot_diag * 0.5); // Scale factor for 3D
 }
 
