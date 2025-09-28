@@ -987,7 +987,7 @@ void ComputeBoxCorners(ImPlot3DPoint* corners, const ImPlot3DPoint& range_min, c
 // Convert a position in the plot's NDC to pixels
 ImVec2 NDCToPixels(const ImPlot3DPlot& plot, const ImPlot3DPoint& point) {
     ImVec2 center = plot.PlotRect.GetCenter();
-    ImPlot3DPoint point_pix = plot.GetBoxZoom() * (plot.Rotation * point);
+    ImPlot3DPoint point_pix = plot.GetViewScale() * (plot.Rotation * point);
     point_pix.y *= -1.0f; // Invert y-axis
     point_pix.x += center.x;
     point_pix.y += center.y;
@@ -1481,6 +1481,9 @@ void EndPlot() {
     // Lock setup if not already done
     SetupLock();
 
+    // Pop plot rect clipping
+    ImGui::PopClipRect();
+
     // Reset legend hover
     plot.Items.Legend.Hovered = false;
 
@@ -1887,7 +1890,7 @@ ImPlot3DRay PixelsToNDCRay(const ImVec2& pix) {
     SetupLock();
 
     // Calculate zoom factor and plot center
-    float zoom = plot.GetBoxZoom();
+    float zoom = plot.GetViewScale();
     ImVec2 center = plot.PlotRect.GetCenter();
 
     // Undo screen transformations to get back to NDC space
@@ -2038,7 +2041,7 @@ void HandleInput(ImPlot3DPlot& plot) {
             ImPlot3DPoint delta_pixels(delta.x, -delta.y, 0.0f);
 
             // Convert delta to NDC space
-            float zoom = plot.GetBoxZoom();
+            float zoom = plot.GetViewScale();
             ImPlot3DPoint delta_NDC = plot.Rotation.Inverse() * (delta_pixels / zoom);
 
             // Convert delta to plot space
@@ -2264,8 +2267,6 @@ void SetupLock() {
     ImGuiWindow* window = g.CurrentWindow;
     ImDrawList* draw_list = window->DrawList;
 
-    ImGui::PushClipRect(plot.FrameRect.Min, plot.FrameRect.Max, true);
-
     // Set default formatter/locator
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
@@ -2294,7 +2295,7 @@ void SetupLock() {
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
         if (axis.ShowDefaultTicks) {
-            float pixels = plot.GetBoxZoom() * plot.BoxScale[i];
+            float pixels = plot.GetViewScale() * plot.BoxScale[i];
             axis.Locator(axis.Ticker, axis.Range, pixels, axis.Formatter, axis.FormatterData);
         }
     }
@@ -2322,10 +2323,11 @@ void SetupLock() {
     // Handle user input
     HandleInput(plot);
 
+    // Push plot rect clipping
+    ImGui::PushClipRect(plot.PlotRect.Min, plot.PlotRect.Max, true);
+
     // Render plot box
     RenderPlotBox(draw_list, plot);
-
-    ImGui::PopClipRect();
 }
 
 //-----------------------------------------------------------------------------
@@ -2357,6 +2359,7 @@ static const ImPlot3DStyleVarInfo GPlot3DStyleVarInfo[] = {
     {ImGuiDataType_Float, 2, (ImU32)offsetof(ImPlot3DStyle, PlotDefaultSize)}, // ImPlot3DStyleVar_Plot3DDefaultSize
     {ImGuiDataType_Float, 2, (ImU32)offsetof(ImPlot3DStyle, PlotMinSize)},     // ImPlot3DStyleVar_Plot3DMinSize
     {ImGuiDataType_Float, 2, (ImU32)offsetof(ImPlot3DStyle, PlotPadding)},     // ImPlot3DStyleVar_Plot3DPadding
+    {ImGuiDataType_Float, 1, (ImU32)offsetof(ImPlot3DStyle, ViewScaleFactor)}, // ImPlot3DStyleVar_ViewScaleFactor
 
     // Label style
     {ImGuiDataType_Float, 2, (ImU32)offsetof(ImPlot3DStyle, LabelPadding)},       // ImPlot3DStyleVar_LabelPaddine
@@ -3391,7 +3394,9 @@ void ImPlot3DPlot::SetRange(const ImPlot3DPoint& min, const ImPlot3DPoint& max) 
     Axes[2].SetRange(min.z, max.z);
 }
 
-float ImPlot3DPlot::GetBoxZoom() const { return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 1.8f; }
+float ImPlot3DPlot::GetViewScale() const {
+    return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 1.8f * ImPlot3D::GImPlot3D->Style.ViewScaleFactor;
+}
 
 //-----------------------------------------------------------------------------
 // [SECTION] ImPlot3DStyle
@@ -3409,6 +3414,7 @@ ImPlot3DStyle::ImPlot3DStyle() {
     PlotMinSize = ImVec2(200, 200);
     PlotPadding = ImVec2(10, 10);
     LabelPadding = ImVec2(5, 5);
+    ViewScaleFactor = 1.0f;
     // Legend style
     LegendPadding = ImVec2(10, 10);
     LegendInnerPadding = ImVec2(5, 5);
@@ -3689,7 +3695,7 @@ void ImPlot3D::ShowMetricsWindow(bool* p_popen) {
                 ImGui::BulletText("Animation: Time=%.4f RotationEnd=[%.2f,%.2f,%.2f,%.2f]", plot.AnimationTime, plot.RotationAnimationEnd.x,
                                   plot.RotationAnimationEnd.y, plot.Rotation.z, plot.RotationAnimationEnd.w);
                 ImGui::BulletText("BoxScale: [%.2f,%.2f,%.2f]", plot.BoxScale.x, plot.BoxScale.y, plot.BoxScale.z);
-                ImGui::BulletText("BoxZoom: %.2f", plot.GetBoxZoom());
+                ImGui::BulletText("ViewScale: %.2f", plot.GetViewScale());
 
                 ImGui::TreePop();
             }

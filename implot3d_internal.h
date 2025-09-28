@@ -684,7 +684,7 @@ struct ImPlot3DPlot {
     ImPlot3DPoint RangeMax() const;
     ImPlot3DPoint RangeCenter() const;
     void SetRange(const ImPlot3DPoint& min, const ImPlot3DPoint& max);
-    float GetBoxZoom() const;
+    float GetViewScale() const;
 };
 
 struct ImPlot3DContext {

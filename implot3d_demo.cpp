@@ -369,7 +369,7 @@ void DemoSurfacePlots() {
     // Begin the plot
     if (selected_fill == 1)
         ImPlot3D::PushColormap(colormaps[sel_colormap]);
-    if (ImPlot3D::BeginPlot("Surface Plots", ImVec2(-1, 400), ImPlot3DFlags_NoClip)) {
+    if (ImPlot3D::BeginPlot("Surface Plots", ImVec2(-1, 0), ImPlot3DFlags_NoClip)) {
         ImPlot3D::SetupAxesLimits(-1, 1, -1, 1, -1.5, 1.5);
 
         // Set fill style
@@ -519,7 +519,7 @@ void DemoRealtimePlots() {
     static float t = 0.0f;
     static float last_t = -1.0f;
 
-    if (ImPlot3D::BeginPlot("Scrolling Plot", ImVec2(-1, 400))) {
+    if (ImPlot3D::BeginPlot("Scrolling Plot")) {
         // Pool mouse data every 10 ms
         t += ImGui::GetIO().DeltaTime;
         if (t - last_t > 0.01f) {
@@ -1050,6 +1050,7 @@ void ShowStyleEditor(ImPlot3DStyle* ref) {
             ImGui::SliderFloat2("PlotMinSize", (float*)&style.PlotMinSize, 0.0f, 300, "%.0f");
             ImGui::SliderFloat2("PlotPadding", (float*)&style.PlotPadding, 0.0f, 20.0f, "%.0f");
             ImGui::SliderFloat2("LabelPadding", (float*)&style.LabelPadding, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat("ViewScaleFactor", (float*)&style.ViewScaleFactor, 0.1f, 2.0f, "%.2f");
             ImGui::Text("Legend Styling");
             ImGui::SliderFloat2("LegendPadding", (float*)&style.LegendPadding, 0.0f, 20.0f, "%.0f");
             ImGui::SliderFloat2("LegendInnerPadding", (float*)&style.LegendInnerPadding, 0.0f, 10.0f, "%.0f");
