@@ -1377,6 +1377,14 @@ void ShowPlotContextMenu(ImPlot3DPlot& plot) {
             ImFlipFlag(plot.Flags, ImPlot3DFlags_NoClip);
         if (ImGui::MenuItem("Mouse Position", nullptr, !ImHasFlag(plot.Flags, ImPlot3DFlags_NoMouseText)))
             ImFlipFlag(plot.Flags, ImPlot3DFlags_NoMouseText);
+        if (ImGui::MenuItem("Equal", nullptr, ImHasFlag(plot.Flags, ImPlot3DFlags_Equal))) {
+            ImFlipFlag(plot.Flags, ImPlot3DFlags_Equal);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("X, Y, and Z axes will be constrained to have the same units/pixel");
+        }
         ImGui::EndMenu();
     }
 }
@@ -2229,6 +2237,33 @@ void HandleInput(ImPlot3DPlot& plot) {
                 if (!any_axis_held) {
                     plot.HeldEdgeIdx = hovered_edge_idx;
                     plot.HeldPlaneIdx = hovered_plane_idx;
+                }
+            }
+        }
+    }
+
+    // Handle equal aspect ratio constraint
+    const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+    if (axis_equal) {
+        bool any_axis_held = plot.Axes[0].Held || plot.Axes[1].Held || plot.Axes[2].Held;
+        if (any_axis_held) {
+            // Find the aspect ratio of the held axis
+            double target_aspect = 0.0;
+            int held_axis = -1;
+            for (int i = 0; i < 3; i++) {
+                if (plot.Axes[i].Held) {
+                    held_axis = i;
+                    target_aspect = plot.Axes[i].GetAspect();
+                    break;
+                }
+            }
+
+            // Apply the same aspect ratio to the other axes that are hovered
+            if (held_axis != -1) {
+                for (int i = 0; i < 3; i++) {
+                    if (i != held_axis && plot.Axes[i].Hovered && !plot.Axes[i].IsInputLocked()) {
+                        plot.Axes[i].SetAspect(target_aspect);
+                    }
                 }
             }
         }
@@ -3366,6 +3401,44 @@ void ImPlot3DAxis::ApplyFit() {
     Constrain();
     FitExtents.Min = HUGE_VAL;
     FitExtents.Max = -HUGE_VAL;
+}
+
+void ImPlot3DAxis::SetAspect(double unit_per_pix) {
+    // Get plot context to access plot dimensions
+    ImPlot3DContext& gp = *ImPlot3D::GImPlot3D;
+    if (gp.CurrentPlot == nullptr) return;
+    
+    // Calculate new size based on aspect ratio and pixel size
+    // For 3D, we use the diagonal of the plot area as a reference
+    float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
+    float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
+    float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
+    
+    double new_size = unit_per_pix * plot_diag * 0.5; // Scale factor for 3D
+    double delta = (new_size - Range.Size()) * 0.5;
+    
+    if (IsLocked())
+        return;
+    else if (IsLockedMin() && !IsLockedMax())
+        SetRange(Range.Min, Range.Max + 2*delta);
+    else if (!IsLockedMin() && IsLockedMax())
+        SetRange(Range.Min - 2*delta, Range.Max);
+    else
+        SetRange(Range.Min - delta, Range.Max + delta);
+}
+
+double ImPlot3DAxis::GetAspect() const {
+    // Get plot context to access plot dimensions
+    ImPlot3DContext& gp = *ImPlot3D::GImPlot3D;
+    if (gp.CurrentPlot == nullptr) return 1.0;
+    
+    // Calculate aspect ratio as units per pixel
+    float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
+    float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
+    float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
+    
+    if (plot_diag == 0.0f) return 1.0;
+    return Range.Size() / (plot_diag * 0.5); // Scale factor for 3D
 }
 
 //-----------------------------------------------------------------------------

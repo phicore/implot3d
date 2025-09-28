@@ -603,6 +603,9 @@ struct ImPlot3DAxis {
 
     inline const char* GetLabel() const { return Label.Buf.Data; }
 
+    void SetAspect(double unit_per_pix);
+    double GetAspect() const;
+
     bool HasLabel() const;
     bool HasGridLines() const;
     bool HasTickLabels() const;
