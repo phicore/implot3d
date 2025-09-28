@@ -1481,6 +1481,9 @@ void EndPlot() {
     // Lock setup if not already done
     SetupLock();
 
+    // Pop plot rect clipping
+    ImGui::PopClipRect();
+
     // Reset legend hover
     plot.Items.Legend.Hovered = false;
 
@@ -2264,8 +2267,6 @@ void SetupLock() {
     ImGuiWindow* window = g.CurrentWindow;
     ImDrawList* draw_list = window->DrawList;
 
-    ImGui::PushClipRect(plot.FrameRect.Min, plot.FrameRect.Max, true);
-
     // Set default formatter/locator
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
@@ -2322,10 +2323,11 @@ void SetupLock() {
     // Handle user input
     HandleInput(plot);
 
+    // Push plot rect clipping
+    ImGui::PushClipRect(plot.PlotRect.Min, plot.PlotRect.Max, true);
+
     // Render plot box
     RenderPlotBox(draw_list, plot);
-
-    ImGui::PopClipRect();
 }
 
 //-----------------------------------------------------------------------------
