@@ -1000,10 +1000,11 @@ ImPlot3DPoint PlotToNDC(const ImPlot3DPlot& plot, const ImPlot3DPoint& point) {
     ImPlot3DPoint ndc_point;
     for (int i = 0; i < 3; i++) {
         const ImPlot3DAxis& axis = plot.Axes[i];
-        float ndc_range = 0.5f * plot.BoxScale[i];
+        // Get axis point in [0, 1] range
         float t = (point[i] - axis.Range.Min) / (axis.Range.Max - axis.Range.Min);
-        t *= plot.BoxScale[i];
-        ndc_point[i] = ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - t) : (t - ndc_range);
+        // Convert point to NDC range [-0.5*NDCScale, 0.5*NDCScale]
+        const float ndc_range = 0.5f;
+        ndc_point[i] = (ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - t) : (t - ndc_range)) * axis.NDCScale;
     }
     return ndc_point;
 }
@@ -1349,13 +1350,13 @@ void ShowPlotContextMenu(ImPlot3DPlot& plot) {
 
     if ((ImGui::BeginMenu("Box"))) {
         ImGui::PushItemWidth(75);
-        float temp_scale[3] = {plot.BoxScale[0], plot.BoxScale[1], plot.BoxScale[2]};
+        float temp_scale[3] = {plot.Axes[0].NDCScale, plot.Axes[1].NDCScale, plot.Axes[2].NDCScale};
         if (ImGui::DragFloat("Scale X", &temp_scale[0], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[0] = ImMax(temp_scale[0], 0.01f);
+            plot.Axes[0].NDCScale = ImMax(temp_scale[0], 0.01f);
         if (ImGui::DragFloat("Scale Y", &temp_scale[1], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[1] = ImMax(temp_scale[1], 0.01f);
+            plot.Axes[1].NDCScale = ImMax(temp_scale[1], 0.01f);
         if (ImGui::DragFloat("Scale Z", &temp_scale[2], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[2] = ImMax(temp_scale[2], 0.01f);
+            plot.Axes[2].NDCScale = ImMax(temp_scale[2], 0.01f);
         ImGui::PopItemWidth();
         ImGui::EndMenu();
     }
@@ -1709,7 +1710,9 @@ void SetupBoxScale(float x, float y, float z) {
                          "SetupBoxScale() needs to be called after BeginPlot() and before any setup locking functions (e.g. PlotX)!");
     IM_ASSERT_USER_ERROR(x > 0.0f && y > 0.0f && z > 0.0f, "SetupBoxScale() requires all aspect ratios to be greater than 0!");
     ImPlot3DPlot& plot = *gp.CurrentPlot;
-    plot.BoxScale = ImPlot3DPoint(x, y, z);
+    plot.Axes[0].NDCScale = x;
+    plot.Axes[1].NDCScale = y;
+    plot.Axes[2].NDCScale = z;
 }
 
 void SetupLegend(ImPlot3DLocation location, ImPlot3DLegendFlags flags) {
@@ -1797,14 +1800,15 @@ ImPlot3DPoint PixelsToPlotPlane(const ImVec2& pix, ImPlane3D plane, bool mask) {
     ComputeActiveFaces(active_faces, plot.Rotation, plot.Axes);
 
     // Calculate intersection point with the planes
-    ImPlot3DPoint P = IntersectPlane(active_faces[plane] ? 0.5f * plot.BoxScale[plane] : -0.5f * plot.BoxScale[plane]);
+    ImPlot3DPoint P = IntersectPlane(active_faces[plane] ? 0.5f * plot.Axes[plane].NDCScale : -0.5f * plot.Axes[plane].NDCScale);
     if (P.IsNaN())
         return P;
 
     // Helper lambda to check if point P is within the plot box
     auto InRange = [&](const ImPlot3DPoint& P) {
-        return P.x >= -0.5f * plot.BoxScale.x && P.x <= 0.5f * plot.BoxScale.x && P.y >= -0.5f * plot.BoxScale.y && P.y <= 0.5f * plot.BoxScale.y &&
-               P.z >= -0.5f * plot.BoxScale.z && P.z <= 0.5f * plot.BoxScale.z;
+        ImPlot3DPoint box_scale = plot.GetBoxScale();
+        return P.x >= -0.5f * box_scale.x && P.x <= 0.5f * box_scale.x && P.y >= -0.5f * box_scale.y && P.y <= 0.5f * box_scale.y &&
+               P.z >= -0.5f * box_scale.z && P.z <= 0.5f * box_scale.z;
     };
 
     // Handle mask (if one of the intersections is out of range, set it to NAN)
@@ -1874,9 +1878,9 @@ ImPlot3DPoint NDCToPlot(const ImPlot3DPoint& point) {
     ImPlot3DPoint plot_point;
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
-        float ndc_range = 0.5f * plot.BoxScale[i];
+        float ndc_range = 0.5f * axis.NDCScale;
         float t = ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - point[i]) : (point[i] + ndc_range);
-        t /= plot.BoxScale[i];
+        t /= axis.NDCScale;
         plot_point[i] = axis.Range.Min + t * (axis.Range.Max - axis.Range.Min);
     }
     return plot_point;
@@ -2053,7 +2057,7 @@ void HandleInput(ImPlot3DPlot& plot) {
             ImPlot3DPoint delta_NDC = plot.Rotation.Inverse() * (delta_pixels / zoom);
 
             // Convert delta to plot space
-            ImPlot3DPoint delta_plot = delta_NDC * (plot.RangeMax() - plot.RangeMin()) / plot.BoxScale;
+            ImPlot3DPoint delta_plot = delta_NDC * (plot.RangeMax() - plot.RangeMin()) / plot.GetBoxScale();
 
             // Adjust delta for inverted axes
             for (int i = 0; i < 3; i++) {
@@ -2314,7 +2318,7 @@ void SetupLock() {
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
         if (axis.ShowDefaultTicks) {
-            float pixels = plot.GetViewScale() * plot.BoxScale[i];
+            float pixels = plot.GetViewScale() * axis.NDCScale;
             axis.Locator(axis.Ticker, axis.Range, pixels, axis.Formatter, axis.FormatterData);
         }
     }
@@ -3387,7 +3391,7 @@ void ImPlot3DAxis::ApplyFit() {
     FitExtents.Max = -HUGE_VAL;
 }
 
-void ImPlot3DAxis::SetAspect(double unit_per_pix) {
+void ImPlot3DAxis::SetAspect(double units_per_ndc) {
     // Get plot context to access plot dimensions
     ImPlot3DContext& gp = *ImPlot3D::GImPlot3D;
     if (gp.CurrentPlot == nullptr)
@@ -3395,21 +3399,22 @@ void ImPlot3DAxis::SetAspect(double unit_per_pix) {
 
     // Calculate new size based on aspect ratio and pixel size
     // For 3D, we use the diagonal of the plot area as a reference
-    float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
-    float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
-    float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
+    // float plot_width = gp.CurrentPlot->PlotRect.GetWidth();
+    // float plot_height = gp.CurrentPlot->PlotRect.GetHeight();
+    // float plot_diag = ImSqrt(plot_width * plot_width + plot_height * plot_height);
 
-    double new_size = unit_per_pix * plot_diag * 0.5; // Scale factor for 3D
-    double delta = (new_size - Range.Size()) * 0.5;
+    // double new_size = unit_per_pix * plot_diag * 0.5; // Scale factor for 3D
+    // double box_scale = gp.CurrentPlot->BoxScale[];
+    // double delta = (units_per_ndc - Range.Size()) * 0.5;
 
-    if (IsLocked())
-        return;
-    else if (IsLockedMin() && !IsLockedMax())
-        SetRange(Range.Min, Range.Max + 2 * delta);
-    else if (!IsLockedMin() && IsLockedMax())
-        SetRange(Range.Min - 2 * delta, Range.Max);
-    else
-        SetRange(Range.Min - delta, Range.Max + delta);
+    // if (IsLocked())
+    //     return;
+    // else if (IsLockedMin() && !IsLockedMax())
+    //     SetRange(Range.Min, Range.Max + 2 * delta);
+    // else if (!IsLockedMin() && IsLockedMax())
+    //     SetRange(Range.Min - 2 * delta, Range.Max);
+    // else
+    //     SetRange(Range.Min - delta, Range.Max + delta);
 }
 
 double ImPlot3DAxis::GetAspect() const {
@@ -3457,6 +3462,8 @@ void ImPlot3DPlot::SetRange(const ImPlot3DPoint& min, const ImPlot3DPoint& max) 
 float ImPlot3DPlot::GetViewScale() const {
     return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 1.8f * ImPlot3D::GImPlot3D->Style.ViewScaleFactor;
 }
+
+ImPlot3DPoint ImPlot3DPlot::GetBoxScale() const { return ImPlot3DPoint(Axes[0].NDCScale, Axes[1].NDCScale, Axes[2].NDCScale); }
 
 //-----------------------------------------------------------------------------
 // [SECTION] ImPlot3DStyle
@@ -3754,7 +3761,6 @@ void ImPlot3D::ShowMetricsWindow(bool* p_popen) {
                 ImGui::BulletText("Rotation: [%.2f,%.2f,%.2f,%.2f]", plot.Rotation.x, plot.Rotation.y, plot.Rotation.z, plot.Rotation.w);
                 ImGui::BulletText("Animation: Time=%.4f RotationEnd=[%.2f,%.2f,%.2f,%.2f]", plot.AnimationTime, plot.RotationAnimationEnd.x,
                                   plot.RotationAnimationEnd.y, plot.Rotation.z, plot.RotationAnimationEnd.w);
-                ImGui::BulletText("BoxScale: [%.2f,%.2f,%.2f]", plot.BoxScale.x, plot.BoxScale.y, plot.BoxScale.z);
                 ImGui::BulletText("ViewScale: %.2f", plot.GetViewScale());
 
                 ImGui::TreePop();
