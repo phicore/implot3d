@@ -444,10 +444,14 @@ struct ImPlot3DTicker {
 
 // Holds axis information
 struct ImPlot3DAxis {
+    // Flags
     ImPlot3DAxisFlags Flags;
     ImPlot3DAxisFlags PreviousFlags;
+    // Range
     ImPlot3DRange Range;
     ImPlot3DCond RangeCond;
+    float NDCScale;
+    // Label
     ImGuiTextBuffer Label;
     // Ticks
     ImPlot3DTicker Ticker;
@@ -472,6 +476,7 @@ struct ImPlot3DAxis {
         Range.Min = 0.0f;
         Range.Max = 1.0f;
         RangeCond = ImPlot3DCond_None;
+        NDCScale = 1.0f;
         // Ticks
         Formatter = nullptr;
         FormatterData = nullptr;
@@ -603,6 +608,27 @@ struct ImPlot3DAxis {
 
     inline const char* GetLabel() const { return Label.Buf.Data; }
 
+    inline float NDCSize() const {
+        // By default, the axis span from NDC -0.5 to 0.5, so size is 1.0
+        // If NDCScale is applied, the size is scaled accordingly
+        return NDCScale;
+    }
+
+    inline void SetAspect(double units_per_ndc_unit) {
+        double new_size = units_per_ndc_unit * NDCSize();
+        double delta = (new_size - Range.Size()) * 0.5;
+        if (IsLocked())
+            return;
+        else if (IsLockedMin() && !IsLockedMax())
+            SetRange(Range.Min, Range.Max + 2 * delta);
+        else if (!IsLockedMin() && IsLockedMax())
+            SetRange(Range.Min - 2 * delta, Range.Max);
+        else
+            SetRange(Range.Min - delta, Range.Max + delta);
+    }
+
+    double GetAspect() const { return Range.Size() / NDCSize(); }
+
     bool HasLabel() const;
     bool HasGridLines() const;
     bool HasTickLabels() const;
@@ -628,8 +654,7 @@ struct ImPlot3DPlot {
     ImPlot3DQuat InitialRotation; // Initial rotation quaternion
     ImPlot3DQuat Rotation;        // Current rotation quaternion
     ImPlot3DCond RotationCond;
-    ImPlot3DAxis Axes[3];   // X, Y, Z axes
-    ImPlot3DPoint BoxScale; // Scale factor for plot box X, Y, Z axes
+    ImPlot3DAxis Axes[3]; // X, Y, Z axes
     // Animation
     float AnimationTime;               // Remaining animation time
     ImPlot3DQuat RotationAnimationEnd; // End rotation for animation
@@ -658,7 +683,6 @@ struct ImPlot3DPlot {
         RotationCond = ImPlot3DCond_None;
         for (int i = 0; i < 3; i++)
             Axes[i] = ImPlot3DAxis();
-        BoxScale = ImPlot3DPoint(1.0f, 1.0f, 1.0f);
         AnimationTime = 0.0f;
         RotationAnimationEnd = Rotation;
         SetupLocked = false;
@@ -679,12 +703,29 @@ struct ImPlot3DPlot {
     inline const char* GetTitle() const { return Title.Buf.Data; }
     inline bool IsRotationLocked() const { return RotationCond == ImPlot3DCond_Always; }
 
+    // Extends the fit range of all three axes to include the provided point
     void ExtendFit(const ImPlot3DPoint& point);
+
+    // Returns the minimum of the range in all three dimensions
     ImPlot3DPoint RangeMin() const;
+
+    // Returns the maximum of the range in all three dimensions
     ImPlot3DPoint RangeMax() const;
+
+    // Returns the point at the center of the range in all three dimensions
     ImPlot3DPoint RangeCenter() const;
+
+    // Sets the range of all three axes
     void SetRange(const ImPlot3DPoint& min, const ImPlot3DPoint& max);
+
+    // Returns the scale of the plot view (constant to convert from NDC coordinates to pixels coordinates)
     float GetViewScale() const;
+
+    // Returns the scale of the plot box in each dimension
+    ImPlot3DPoint GetBoxScale() const;
+
+    // Sets the aspect ratio of the plot box to be equal in all dimensions, using the provided axis as reference for scaling
+    void ApplyEqualAspect(ImAxis3D ref_axis);
 };
 
 struct ImPlot3DContext {

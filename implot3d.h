@@ -106,6 +106,7 @@ enum ImPlot3DFlags_ {
     ImPlot3DFlags_NoMouseText = 1 << 2, // Hide mouse position in plot coordinates
     ImPlot3DFlags_NoClip = 1 << 3,      // Disable 3D box clipping
     ImPlot3DFlags_NoMenus = 1 << 4,     // The user will not be able to open context menus
+    ImPlot3DFlags_Equal = 1 << 5,       // X, Y, and Z axes will be constrained to have the same units/pixel
     ImPlot3DFlags_CanvasOnly = ImPlot3DFlags_NoTitle | ImPlot3DFlags_NoLegend | ImPlot3DFlags_NoMouseText,
 };
 

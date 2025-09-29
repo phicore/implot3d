@@ -1000,10 +1000,11 @@ ImPlot3DPoint PlotToNDC(const ImPlot3DPlot& plot, const ImPlot3DPoint& point) {
     ImPlot3DPoint ndc_point;
     for (int i = 0; i < 3; i++) {
         const ImPlot3DAxis& axis = plot.Axes[i];
-        float ndc_range = 0.5f * plot.BoxScale[i];
+        // Get axis point in [0, 1] range
         float t = (point[i] - axis.Range.Min) / (axis.Range.Max - axis.Range.Min);
-        t *= plot.BoxScale[i];
-        ndc_point[i] = ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - t) : (t - ndc_range);
+        // Convert point to NDC range [-0.5*NDCScale, 0.5*NDCScale]
+        const float ndc_range = 0.5f;
+        ndc_point[i] = (ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - t) : (t - ndc_range)) * axis.NDCScale;
     }
     return ndc_point;
 }
@@ -1260,8 +1261,9 @@ bool ShowLegendContextMenu(ImPlot3DLegend& legend, bool visible) {
     return ret;
 }
 
-void ShowAxisContextMenu(ImPlot3DAxis& axis) {
+void ShowAxisContextMenu(ImPlot3DPlot& plot, ImAxis3D axis_id) {
     ImGui::PushItemWidth(75);
+    ImPlot3DAxis& axis = plot.Axes[axis_id];
     bool always_locked = axis.IsRangeLocked() || axis.IsAutoFitting();
     bool label = axis.HasLabel();
     bool grid = axis.HasGridLines();
@@ -1269,6 +1271,7 @@ void ShowAxisContextMenu(ImPlot3DAxis& axis) {
     bool labels = axis.HasTickLabels();
     double drag_speed =
         (axis.Range.Size() <= FLT_EPSILON) ? FLT_EPSILON * 1.0e+13 : 0.01 * axis.Range.Size(); // recover from almost equal axis limits.
+    const bool equal_aspect = ImPlot3D::ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
 
     ImGui::BeginDisabled(always_locked);
     ImGui::CheckboxFlags("##LockMin", (unsigned int*)&axis.Flags, ImPlot3DAxisFlags_LockMin);
@@ -1279,6 +1282,9 @@ void ShowAxisContextMenu(ImPlot3DAxis& axis) {
     float temp_min = axis.Range.Min;
     if (ImGui::DragFloat("Min", &temp_min, (float)drag_speed, -HUGE_VAL, axis.Range.Max - FLT_EPSILON)) {
         axis.SetMin(temp_min, true);
+        // Apply equal aspect if needed
+        if (equal_aspect)
+            plot.ApplyEqualAspect(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1290,6 +1296,9 @@ void ShowAxisContextMenu(ImPlot3DAxis& axis) {
     float temp_max = axis.Range.Max;
     if (ImGui::DragFloat("Max", &temp_max, (float)drag_speed, axis.Range.Min + FLT_EPSILON, HUGE_VAL)) {
         axis.SetMax(temp_max, true);
+        // Apply equal aspect if needed
+        if (equal_aspect)
+            plot.ApplyEqualAspect(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1325,7 +1334,7 @@ void ShowPlaneContextMenu(ImPlot3DPlot& plot, int plane_idx) {
         ImPlot3DAxis& axis = plot.Axes[i];
         ImGui::PushID(i);
         if (ImGui::BeginMenu(axis.HasLabel() ? axis.GetLabel() : axis_labels[i])) {
-            ShowAxisContextMenu(axis);
+            ShowAxisContextMenu(plot, i);
             ImGui::EndMenu();
         }
         ImGui::PopID();
@@ -1339,7 +1348,7 @@ void ShowPlotContextMenu(ImPlot3DPlot& plot) {
         ImGui::PushID(i);
         ImFormatString(buf, sizeof(buf) - 1, i == 0 ? "X-Axis" : "X-Axis %d", i + 1);
         if (ImGui::BeginMenu(axis.HasLabel() ? axis.GetLabel() : axis_labels[i])) {
-            ShowAxisContextMenu(axis);
+            ShowAxisContextMenu(plot, i);
             ImGui::EndMenu();
         }
         ImGui::PopID();
@@ -1349,13 +1358,13 @@ void ShowPlotContextMenu(ImPlot3DPlot& plot) {
 
     if ((ImGui::BeginMenu("Box"))) {
         ImGui::PushItemWidth(75);
-        float temp_scale[3] = {plot.BoxScale[0], plot.BoxScale[1], plot.BoxScale[2]};
+        float temp_scale[3] = {plot.Axes[0].NDCScale, plot.Axes[1].NDCScale, plot.Axes[2].NDCScale};
         if (ImGui::DragFloat("Scale X", &temp_scale[0], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[0] = ImMax(temp_scale[0], 0.01f);
+            plot.Axes[0].NDCScale = ImMax(temp_scale[0], 0.01f);
         if (ImGui::DragFloat("Scale Y", &temp_scale[1], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[1] = ImMax(temp_scale[1], 0.01f);
+            plot.Axes[1].NDCScale = ImMax(temp_scale[1], 0.01f);
         if (ImGui::DragFloat("Scale Z", &temp_scale[2], 0.01f, 0.1f, 3.0f))
-            plot.BoxScale[2] = ImMax(temp_scale[2], 0.01f);
+            plot.Axes[2].NDCScale = ImMax(temp_scale[2], 0.01f);
         ImGui::PopItemWidth();
         ImGui::EndMenu();
     }
@@ -1369,6 +1378,8 @@ void ShowPlotContextMenu(ImPlot3DPlot& plot) {
     }
 
     if ((ImGui::BeginMenu("Settings"))) {
+        if (ImGui::MenuItem("Equal", nullptr, ImHasFlag(plot.Flags, ImPlot3DFlags_Equal)))
+            ImFlipFlag(plot.Flags, ImPlot3DFlags_Equal);
         ImGui::BeginDisabled(plot.Title.empty());
         if (ImGui::MenuItem("Title", nullptr, plot.HasTitle()))
             ImFlipFlag(plot.Flags, ImPlot3DFlags_NoTitle);
@@ -1472,8 +1483,13 @@ void EndPlot() {
         plot.FitThisFrame = false;
         for (int i = 0; i < 3; i++) {
             if (plot.Axes[i].FitThisFrame) {
+                // Perform axis fitting
                 plot.Axes[i].FitThisFrame = false;
                 plot.Axes[i].ApplyFit();
+                // Apply equal aspect constraint
+                const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+                if (axis_equal)
+                    plot.ApplyEqualAspect(i);
             }
         }
     }
@@ -1508,7 +1524,7 @@ void EndPlot() {
         if (ImGui::BeginPopup(axis_contexts[i])) {
             ImGui::Text(axis.HasLabel() ? axis.GetLabel() : "%c-Axis", 'X' + i);
             ImGui::Separator();
-            ShowAxisContextMenu(axis);
+            ShowAxisContextMenu(plot, i);
             ImGui::EndPopup();
         }
     }
@@ -1581,6 +1597,9 @@ void SetupAxisLimits(ImAxis3D idx, double min_lim, double max_lim, ImPlot3DCond 
         axis.SetRange(min_lim, max_lim);
         axis.RangeCond = cond;
         axis.FitThisFrame = false;
+        // Apply equal aspect ratio constraint if needed
+        if (ImHasFlag(plot.Flags, ImPlot3DFlags_Equal))
+            plot.ApplyEqualAspect(idx);
     }
 }
 
@@ -1701,7 +1720,9 @@ void SetupBoxScale(float x, float y, float z) {
                          "SetupBoxScale() needs to be called after BeginPlot() and before any setup locking functions (e.g. PlotX)!");
     IM_ASSERT_USER_ERROR(x > 0.0f && y > 0.0f && z > 0.0f, "SetupBoxScale() requires all aspect ratios to be greater than 0!");
     ImPlot3DPlot& plot = *gp.CurrentPlot;
-    plot.BoxScale = ImPlot3DPoint(x, y, z);
+    plot.Axes[0].NDCScale = x;
+    plot.Axes[1].NDCScale = y;
+    plot.Axes[2].NDCScale = z;
 }
 
 void SetupLegend(ImPlot3DLocation location, ImPlot3DLegendFlags flags) {
@@ -1789,14 +1810,15 @@ ImPlot3DPoint PixelsToPlotPlane(const ImVec2& pix, ImPlane3D plane, bool mask) {
     ComputeActiveFaces(active_faces, plot.Rotation, plot.Axes);
 
     // Calculate intersection point with the planes
-    ImPlot3DPoint P = IntersectPlane(active_faces[plane] ? 0.5f * plot.BoxScale[plane] : -0.5f * plot.BoxScale[plane]);
+    ImPlot3DPoint P = IntersectPlane(active_faces[plane] ? 0.5f * plot.Axes[plane].NDCScale : -0.5f * plot.Axes[plane].NDCScale);
     if (P.IsNaN())
         return P;
 
     // Helper lambda to check if point P is within the plot box
     auto InRange = [&](const ImPlot3DPoint& P) {
-        return P.x >= -0.5f * plot.BoxScale.x && P.x <= 0.5f * plot.BoxScale.x && P.y >= -0.5f * plot.BoxScale.y && P.y <= 0.5f * plot.BoxScale.y &&
-               P.z >= -0.5f * plot.BoxScale.z && P.z <= 0.5f * plot.BoxScale.z;
+        ImPlot3DPoint box_scale = plot.GetBoxScale();
+        return P.x >= -0.5f * box_scale.x && P.x <= 0.5f * box_scale.x && P.y >= -0.5f * box_scale.y && P.y <= 0.5f * box_scale.y &&
+               P.z >= -0.5f * box_scale.z && P.z <= 0.5f * box_scale.z;
     };
 
     // Handle mask (if one of the intersections is out of range, set it to NAN)
@@ -1866,9 +1888,9 @@ ImPlot3DPoint NDCToPlot(const ImPlot3DPoint& point) {
     ImPlot3DPoint plot_point;
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
-        float ndc_range = 0.5f * plot.BoxScale[i];
+        float ndc_range = 0.5f * axis.NDCScale;
         float t = ImPlot3D::ImHasFlag(axis.Flags, ImPlot3DAxisFlags_Invert) ? (ndc_range - point[i]) : (point[i] + ndc_range);
-        t /= plot.BoxScale[i];
+        t /= axis.NDCScale;
         plot_point[i] = axis.Range.Min + t * (axis.Range.Max - axis.Range.Min);
     }
     return plot_point;
@@ -1955,6 +1977,9 @@ void HandleInput(ImPlot3DPlot& plot) {
     // State
     const ImVec2 rot_drag = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
     const bool rotating = ImLengthSqr(rot_drag) > MOUSE_CURSOR_DRAG_THRESHOLD;
+    const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+
+    // HOVERING STATE -------------------------------------------------------------------
 
     // Check if any axis/plane is hovered
     const ImPlot3DQuat& rotation = plot.Rotation;
@@ -2016,6 +2041,8 @@ void HandleInput(ImPlot3DPlot& plot) {
     ImVec2 mouse_pos = ImGui::GetMousePos();
     ImPlot3DPoint mouse_pos_plot = PixelsToPlotPlane(mouse_pos, mouse_plane, false);
 
+    // AUTO FIT -------------------------------------------------------------------
+
     // Handle translation/zoom fit with double click
     if (plot_clicked && (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Middle))) {
         plot.FitThisFrame = true;
@@ -2030,12 +2057,14 @@ void HandleInput(ImPlot3DPlot& plot) {
             plot.Axes[i].FitThisFrame = true;
         }
 
+    // TRANSLATION -------------------------------------------------------------------
+
     // Handle translation with right mouse button
     if (plot.Held && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         ImVec2 delta(IO.MouseDelta.x, IO.MouseDelta.y);
 
         if (plot.Axes[0].Hovered && plot.Axes[1].Hovered && plot.Axes[2].Hovered) {
-            // Perform unconstrained translation (translate on the viewer plane)
+            // Perform unconstrained translation (translate on the viewer's plane)
 
             // Compute delta_pixels in 3D (invert y-axis)
             ImPlot3DPoint delta_pixels(delta.x, -delta.y, 0.0f);
@@ -2045,7 +2074,7 @@ void HandleInput(ImPlot3DPlot& plot) {
             ImPlot3DPoint delta_NDC = plot.Rotation.Inverse() * (delta_pixels / zoom);
 
             // Convert delta to plot space
-            ImPlot3DPoint delta_plot = delta_NDC * (plot.RangeMax() - plot.RangeMin()) / plot.BoxScale;
+            ImPlot3DPoint delta_plot = delta_NDC * (plot.RangeMax() - plot.RangeMin()) / plot.GetBoxScale();
 
             // Adjust delta for inverted axes
             for (int i = 0; i < 3; i++) {
@@ -2058,8 +2087,12 @@ void HandleInput(ImPlot3DPlot& plot) {
                 if (plot.Axes[i].Hovered) {
                     bool increasing = delta_plot[i] < 0.0f;
                     if (delta_plot[i] != 0.0f && !plot.Axes[i].IsPanLocked(increasing)) {
+                        // Update axis range
                         plot.Axes[i].SetMin(plot.Axes[i].Range.Min - delta_plot[i]);
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
+                        // Apply equal aspect ratio constraint
+                        if (axis_equal)
+                            plot.ApplyEqualAspect(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2083,8 +2116,12 @@ void HandleInput(ImPlot3DPlot& plot) {
                 if (plot.Axes[i].Hovered) {
                     bool increasing = delta_plot[i] < 0.0f;
                     if (delta_plot[i] != 0.0f && !plot.Axes[i].IsPanLocked(increasing)) {
+                        // Update axis range
                         plot.Axes[i].SetMin(plot.Axes[i].Range.Min - delta_plot[i]);
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
+                        // Apply equal aspect ratio constraint
+                        if (axis_equal)
+                            plot.ApplyEqualAspect(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2096,11 +2133,7 @@ void HandleInput(ImPlot3DPlot& plot) {
         }
     }
 
-    // Handle context click with right mouse button
-    if (plot.Held && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImPlot3D::ImHasFlag(plot.Flags, ImPlot3DFlags_NoMenus))
-        plot.ContextClick = true;
-    if (rotating || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right))
-        plot.ContextClick = false;
+    // ROTATION -------------------------------------------------------------------
 
     // Handle reset rotation with left mouse double click
     if (plot.Held && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right) && !plot.IsRotationLocked()) {
@@ -2186,6 +2219,8 @@ void HandleInput(ImPlot3DPlot& plot) {
         plot.Rotation.Normalize();
     }
 
+    // ZOOM -------------------------------------------------------------------
+
     // Handle zoom with mouse wheel
     if (plot.Hovered) {
         ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, plot.ID);
@@ -2219,8 +2254,12 @@ void HandleInput(ImPlot3DPlot& plot) {
                 // Set new range after zoom
                 if (plot.Axes[i].Hovered) {
                     if (!plot.Axes[i].IsInputLocked()) {
+                        // Update axis range
                         plot.Axes[i].SetMin(new_min);
                         plot.Axes[i].SetMax(new_max);
+                        // Apply equal aspect ratio constraint
+                        if (axis_equal)
+                            plot.ApplyEqualAspect(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2233,6 +2272,14 @@ void HandleInput(ImPlot3DPlot& plot) {
             }
         }
     }
+
+    // CONTEXT MENU -------------------------------------------------------------------
+
+    // Handle context click with right mouse button
+    if (plot.Held && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImPlot3D::ImHasFlag(plot.Flags, ImPlot3DFlags_NoMenus))
+        plot.ContextClick = true;
+    if (rotating || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right))
+        plot.ContextClick = false;
 
     // Handle context menu (should not happen if it is not a double click action)
     bool not_double_click = (float)(ImGui::GetTime() - IO.MouseClickedTime[ImGuiMouseButton_Right]) > IO.MouseDoubleClickTime;
@@ -2291,11 +2338,25 @@ void SetupLock() {
     plot.CanvasRect = ImRect(plot.FrameRect.Min + gp.Style.PlotPadding, plot.FrameRect.Max - gp.Style.PlotPadding);
     plot.PlotRect = plot.CanvasRect;
 
+    // Apply equal axis aspect constraint if not approximately equal
+    const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+    if (axis_equal) {
+        double xar = plot.Axes[ImAxis3D_X].GetAspect();
+        double yar = plot.Axes[ImAxis3D_Y].GetAspect();
+        double zar = plot.Axes[ImAxis3D_Z].GetAspect();
+        if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar)) {
+            double avg = (xar + yar + zar) / 3.0;
+            plot.Axes[ImAxis3D_X].SetAspect(avg);
+            plot.Axes[ImAxis3D_Y].SetAspect(avg);
+            plot.Axes[ImAxis3D_Z].SetAspect(avg);
+        }
+    }
+
     // Compute ticks
     for (int i = 0; i < 3; i++) {
         ImPlot3DAxis& axis = plot.Axes[i];
         if (axis.ShowDefaultTicks) {
-            float pixels = plot.GetViewScale() * plot.BoxScale[i];
+            float pixels = plot.GetViewScale() * axis.NDCScale;
             axis.Locator(axis.Ticker, axis.Range, pixels, axis.Formatter, axis.FormatterData);
         }
     }
@@ -3398,6 +3459,17 @@ float ImPlot3DPlot::GetViewScale() const {
     return ImMin(PlotRect.GetWidth(), PlotRect.GetHeight()) / 1.8f * ImPlot3D::GImPlot3D->Style.ViewScaleFactor;
 }
 
+ImPlot3DPoint ImPlot3DPlot::GetBoxScale() const { return ImPlot3DPoint(Axes[0].NDCSize(), Axes[1].NDCSize(), Axes[2].NDCSize()); }
+
+void ImPlot3DPlot::ApplyEqualAspect(ImAxis3D ref_axis) {
+    double aspect = Axes[ref_axis].GetAspect();
+    for (int i = 0; i < 3; i++) {
+        if (i != ref_axis && !Axes[i].IsInputLocked()) {
+            Axes[i].SetAspect(aspect);
+        }
+    }
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] ImPlot3DStyle
 //-----------------------------------------------------------------------------
@@ -3694,7 +3766,6 @@ void ImPlot3D::ShowMetricsWindow(bool* p_popen) {
                 ImGui::BulletText("Rotation: [%.2f,%.2f,%.2f,%.2f]", plot.Rotation.x, plot.Rotation.y, plot.Rotation.z, plot.Rotation.w);
                 ImGui::BulletText("Animation: Time=%.4f RotationEnd=[%.2f,%.2f,%.2f,%.2f]", plot.AnimationTime, plot.RotationAnimationEnd.x,
                                   plot.RotationAnimationEnd.y, plot.Rotation.z, plot.RotationAnimationEnd.w);
-                ImGui::BulletText("BoxScale: [%.2f,%.2f,%.2f]", plot.BoxScale.x, plot.BoxScale.y, plot.BoxScale.z);
                 ImGui::BulletText("ViewScale: %.2f", plot.GetViewScale());
 
                 ImGui::TreePop();
