@@ -608,7 +608,7 @@ struct ImPlot3DAxis {
 
     inline const char* GetLabel() const { return Label.Buf.Data; }
 
-    inline double NDCSize() const {
+    inline float NDCSize() const {
         // By default, the axis span from NDC -0.5 to 0.5, so size is 1.0
         // If NDCScale is applied, the size is scaled accordingly
         return NDCScale;
