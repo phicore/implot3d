@@ -66,23 +66,27 @@ jobs:
           // Process linked issues
           const linkedIssues = context.payload.pull_request.body?.match(/(?:Fixes|Closes) #\d+/g) || [];
           console.log(`Linked Issues: ${linkedIssues}`);
+          const labelsToTransfer = new Set();
           for (const issueRef of linkedIssues) {
             const issueNumber = parseInt(issueRef.split('#')[1]);
             console.log(`Processing linked issue: ${issueNumber}`);
 
-            // Print current labels on the linked issue
-            const issueLabels = (await github.rest.issues.listLabelsOnIssue({
+            // Get current labels on the linked issue
+            const { data: issueLabels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber
-            })).data;
+            });
             console.log(`Current Labels on Issue #${issueNumber}:`, issueLabels.map(label => label.name));
 
-            // Check if 'status:review' is already present
-            let alreadyInReview = false;
+            // Check if 'status:review' is already present and collect labels to transfer
+            let issueAlreadyInReview = false;
             for (const label of issueLabels) {
+              if (label.name.startsWith('prio:') || label.name.startsWith('type:')) {
+                labelsToTransfer.add(label.name);
+              }
               if (label.name === 'status:review') {
-                alreadyInReview = true;
+                issueAlreadyInReview = true;
               } else if (label.name.startsWith('status:')) {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
@@ -94,17 +98,28 @@ jobs:
             }
 
             // Add 'status:review' label to the linked issue if not already present
-            if (!alreadyInReview) {
+            if (!issueAlreadyInReview) {
               await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              labels: ['status:review']
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['status:review']
               });
               console.log(`Added status:review label to issue: ${issueNumber}`);
             } else {
               console.log(`status:review label already present on issue: ${issueNumber}`);
             }
+          }
+
+          // Add the collected labels to the PR
+          if (labelsToTransfer.size > 0) {
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: Array.from(labelsToTransfer)
+            });
+            console.log('Transferred labels to PR:', Array.from(labelsToTransfer));
           }
 
     - name: Set PR and linked issues to done
@@ -152,3 +167,4 @@ jobs:
             });
             console.log(`Added status:done label to issue: ${issueNumber}`);
           }
+
