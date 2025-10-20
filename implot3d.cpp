@@ -2204,19 +2204,23 @@ void HandleInput(ImPlot3DPlot& plot) {
         float angle_x = delta.x * (3.1415f / 180.0f);
         float angle_y = delta.y * (3.1415f / 180.0f);
 
-        // Detect if the plot is upside down by checking the transformed up vector
-        ImPlot3DPoint up_vector = plot.Rotation * ImPlot3DPoint(0.0f, 0.0f, 1.0f);
-        bool is_upside_down = up_vector.z < 0.0f;
+        // If drag just started, determine and store the rotation axis
+        if (plot.DragRotationAxis == ImPlot3DPoint(0.0f, 0.0f, 0.0f)) {
+            ImPlot3DPoint up_vector = plot.Rotation * ImPlot3DPoint(0.0f, 0.0f, 1.0f);
+            bool is_upside_down = up_vector.z < 0.0f;
+            plot.DragRotationAxis = is_upside_down ? ImPlot3DPoint(0.0f, 0.0f, -1.0f) : ImPlot3DPoint(0.0f, 0.0f, 1.0f);
+        }
 
         // Create quaternions for the rotations
         ImPlot3DQuat quat_x(angle_y, ImPlot3DPoint(1.0f, 0.0f, 0.0f));
-        // Use -Z axis rotation when upside down to fix inverted rotation behavior
-        ImPlot3DPoint z_axis = is_upside_down ? ImPlot3DPoint(0.0f, 0.0f, -1.0f) : ImPlot3DPoint(0.0f, 0.0f, 1.0f);
-        ImPlot3DQuat quat_z(angle_x, z_axis);
+        ImPlot3DQuat quat_z(angle_x, plot.DragRotationAxis);
 
         // Combine the new rotations with the current rotation
         plot.Rotation = quat_x * plot.Rotation * quat_z;
         plot.Rotation.Normalize();
+    } else {
+        // Reset drag rotation axis when not dragging
+        plot.DragRotationAxis = ImPlot3DPoint(0.0f, 0.0f, 0.0f);
     }
 
     // ZOOM -------------------------------------------------------------------
