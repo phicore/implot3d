@@ -662,8 +662,9 @@ struct ImPlot3DPlot {
     bool SetupLocked;
     bool Hovered;
     bool Held;
-    int HeldEdgeIdx;  // Index of the edge being held
-    int HeldPlaneIdx; // Index of the plane being held
+    int HeldEdgeIdx;                // Index of the edge being held
+    int HeldPlaneIdx;               // Index of the plane being held
+    ImPlot3DPoint DragRotationAxis; // Axis of rotation for the duration of a drag
     // Fit data
     bool FitThisFrame;
     // Items
@@ -689,6 +690,7 @@ struct ImPlot3DPlot {
         Hovered = Held = false;
         HeldEdgeIdx = -1;
         HeldPlaneIdx = -1;
+        DragRotationAxis = ImPlot3DPoint(0.0f, 0.0f, 0.0f);
         FitThisFrame = true;
         ContextClick = false;
         OpenContextThisFrame = false;
