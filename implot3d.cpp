@@ -2039,8 +2039,52 @@ void HandleInput(ImPlot3DPlot& plot) {
         mouse_plane = ImPlane3D_YZ;
     else if (plot.Axes[0].Hovered && plot.Axes[2].Hovered)
         mouse_plane = ImPlane3D_XZ;
-    else if (plot.Axes[2].Hovered)
-        mouse_plane = ImPlane3D_YZ;
+    else if (plot.Axes[0].Hovered && plot.Axes[1].Hovered)
+        mouse_plane = ImPlane3D_XY;
+    else if (plot.HeldEdgeIdx != -1 || hovered_edge_idx != -1) {
+        // Single axis hovered: use the edge index and active faces to pick the visible plane
+        // Each edge belongs to exactly 2 faces. We pick the active (visible) one.
+
+        // If the user is holding an edge, use that index; otherwise, use the hovered edge index
+        int curr_edge_idx = plot.HeldEdgeIdx != -1 ? plot.HeldEdgeIdx : hovered_edge_idx;
+
+        // Map edge index to the two faces it belongs to, and corresponding plane
+        // Format: {face_index, plane_enum}
+        static const int edge_to_faces[12][2][2] = {
+            {{1, ImPlane3D_XZ}, {2, ImPlane3D_XY}}, // Edge 0: Y-min face, Z-min face
+            {{2, ImPlane3D_XY}, {3, ImPlane3D_YZ}}, // Edge 1: Z-min face, X-max face
+            {{2, ImPlane3D_XY}, {4, ImPlane3D_XZ}}, // Edge 2: Z-min face, Y-max face
+            {{0, ImPlane3D_YZ}, {2, ImPlane3D_XY}}, // Edge 3: X-min face, Z-min face
+            {{1, ImPlane3D_XZ}, {5, ImPlane3D_XY}}, // Edge 4: Y-min face, Z-max face
+            {{3, ImPlane3D_YZ}, {5, ImPlane3D_XY}}, // Edge 5: X-max face, Z-max face
+            {{4, ImPlane3D_XZ}, {5, ImPlane3D_XY}}, // Edge 6: Y-max face, Z-max face
+            {{0, ImPlane3D_YZ}, {5, ImPlane3D_XY}}, // Edge 7: X-min face, Z-max face
+            {{0, ImPlane3D_YZ}, {1, ImPlane3D_XZ}}, // Edge 8: X-min face, Y-min face
+            {{1, ImPlane3D_XZ}, {3, ImPlane3D_YZ}}, // Edge 9: Y-min face, X-max face
+            {{3, ImPlane3D_YZ}, {4, ImPlane3D_XZ}}, // Edge 10: X-max face, Y-max face
+            {{0, ImPlane3D_YZ}, {4, ImPlane3D_XZ}}, // Edge 11: X-min face, Y-max face
+        };
+
+        // Check which of the two faces is active (visible from camera)
+        int face0 = edge_to_faces[curr_edge_idx][0][0];
+        int face1 = edge_to_faces[curr_edge_idx][1][0];
+
+        // Determine which face is active based on active_faces
+        // Faces 0-2 are min faces (active when active_faces[i] == false)
+        // Faces 3-5 are max faces (active when active_faces[i] == true)
+        bool face0_active = (face0 < 3) ? !active_faces[face0] : active_faces[face0 - 3];
+        bool face1_active = (face1 < 3) ? !active_faces[face1] : active_faces[face1 - 3];
+
+        // Pick the plane corresponding to the active face
+        if (face0_active) {
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][0][1];
+        } else if (face1_active) {
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][1][1];
+        } else {
+            // Fallback: both could be active in some edge cases, use first one
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][0][1];
+        }
+    }
     ImVec2 mouse_pos = ImGui::GetMousePos();
     ImPlot3DPoint mouse_pos_plot = PixelsToPlotPlane(mouse_pos, mouse_plane, false);
 
