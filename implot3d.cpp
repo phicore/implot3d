@@ -1284,7 +1284,7 @@ void ShowAxisContextMenu(ImPlot3DPlot& plot, ImAxis3D axis_id) {
         axis.SetMin(temp_min, true);
         // Apply equal aspect if needed
         if (equal_aspect)
-            plot.ApplyEqualConstraint(axis_id);
+            plot.ApplyEqualAspect(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1298,7 +1298,7 @@ void ShowAxisContextMenu(ImPlot3DPlot& plot, ImAxis3D axis_id) {
         axis.SetMax(temp_max, true);
         // Apply equal aspect if needed
         if (equal_aspect)
-            plot.ApplyEqualConstraint(axis_id);
+            plot.ApplyEqualAspect(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1482,19 +1482,40 @@ void EndPlot() {
     if (plot.FitThisFrame) {
         plot.FitThisFrame = false;
 
-        // First, apply fit to all axes
-        for (int i = 0; i < 3; i++) {
-            if (plot.Axes[i].FitThisFrame) {
-                plot.Axes[i].FitThisFrame = false;
-                plot.Axes[i].ApplyFit();
-            }
-        }
-
-        // Then, apply equal aspect constraint if enabled
-        // This ensures data remains centered and visible
         const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
-        if (axis_equal)
-            plot.ApplyEqualConstraint();
+        if (!axis_equal) {
+            // Apply fit to all axes independently
+            for (int i = 0; i < 3; i++) {
+                if (plot.Axes[i].FitThisFrame) {
+                    plot.Axes[i].FitThisFrame = false;
+                    plot.Axes[i].ApplyFit();
+                }
+            }
+        } else {
+            // Find the fitted axis with the highest aspect ratio (units per NDC unit) after fit
+            // This axis will require the most space and should be used as reference
+            ImAxis3D ref_axis = ImAxis3D_X;
+            double max_aspect = 0.0;
+
+            // First, apply fit to all axes
+            for (int i = 0; i < 3; i++) {
+                if (plot.Axes[i].FitThisFrame) {
+                    plot.Axes[i].FitThisFrame = false;
+                    plot.Axes[i].ApplyFit();
+
+                    // Get aspect ratio for this axis
+                    double aspect = plot.Axes[i].GetAspect();
+                    if (aspect > max_aspect) {
+                        max_aspect = aspect;
+                        ref_axis = (ImAxis3D)i;
+                    }
+                }
+            }
+
+            // Then, apply equal aspect constraint if enabled
+            // This ensures data remains centered and visible
+            plot.ApplyEqualAspect(ref_axis);
+        }
     }
 
     // Lock setup if not already done
@@ -1602,7 +1623,7 @@ void SetupAxisLimits(ImAxis3D idx, double min_lim, double max_lim, ImPlot3DCond 
         axis.FitThisFrame = false;
         // Apply equal aspect ratio constraint if needed
         if (ImHasFlag(plot.Flags, ImPlot3DFlags_Equal))
-            plot.ApplyEqualConstraint(idx);
+            plot.ApplyEqualAspect(idx);
     }
 }
 
@@ -2139,7 +2160,7 @@ void HandleInput(ImPlot3DPlot& plot) {
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
                         // Apply equal aspect ratio constraint
                         if (axis_equal)
-                            plot.ApplyEqualConstraint(i);
+                            plot.ApplyEqualAspect(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2168,7 +2189,7 @@ void HandleInput(ImPlot3DPlot& plot) {
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
                         // Apply equal aspect ratio constraint
                         if (axis_equal)
-                            plot.ApplyEqualConstraint(i);
+                            plot.ApplyEqualAspect(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2310,7 +2331,7 @@ void HandleInput(ImPlot3DPlot& plot) {
 
             // Apply equal constraint using the reference axis
             if (axis_equal)
-                plot.ApplyEqualConstraint(ref_axis);
+                plot.ApplyEqualAspect(ref_axis);
 
             // If no axis was held before (user started zoom in this frame), set the held edge/plane indices
             if (!any_axis_held) {
@@ -2391,8 +2412,12 @@ void SetupLock() {
         double xar = plot.Axes[ImAxis3D_X].GetAspect();
         double yar = plot.Axes[ImAxis3D_Y].GetAspect();
         double zar = plot.Axes[ImAxis3D_Z].GetAspect();
-        if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar))
-            plot.ApplyEqualConstraint();
+        if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar)) {
+            double aspect = (xar + yar + zar) / 3.0;
+            plot.Axes[ImAxis3D_X].SetAspect(aspect);
+            plot.Axes[ImAxis3D_Y].SetAspect(aspect);
+            plot.Axes[ImAxis3D_Z].SetAspect(aspect);
+        }
     }
 
     // Compute ticks
@@ -3504,34 +3529,13 @@ float ImPlot3DPlot::GetViewScale() const {
 
 ImPlot3DPoint ImPlot3DPlot::GetBoxScale() const { return ImPlot3DPoint(Axes[0].NDCSize(), Axes[1].NDCSize(), Axes[2].NDCSize()); }
 
-void ImPlot3DPlot::ApplyEqualConstraint(ImAxis3D ref_axis) {
+void ImPlot3DPlot::ApplyEqualAspect(ImAxis3D ref_axis) {
     double aspect = Axes[ref_axis].GetAspect();
     for (int i = 0; i < 3; i++) {
         if (i != ref_axis && !Axes[i].IsInputLocked()) {
             Axes[i].SetAspect(aspect);
         }
     }
-}
-
-void ImPlot3DPlot::ApplyEqualConstraint() {
-    // Find the axis with the highest aspect ratio (units per NDC unit)
-    // This axis will require the most space and should be used as reference
-    ImAxis3D ref_axis = ImAxis3D_X;
-    double max_aspect = 0.0;
-
-    for (int i = 0; i < 3; i++) {
-        if (!Axes[i].IsInputLocked()) {
-            double aspect = Axes[i].GetAspect();
-            if (aspect > max_aspect) {
-                max_aspect = aspect;
-                ref_axis = (ImAxis3D)i;
-            }
-        }
-    }
-
-    // Apply equal aspect using the reference axis with highest aspect ratio
-    // This ensures all data remains visible and centered
-    ApplyEqualConstraint(ref_axis);
 }
 
 //-----------------------------------------------------------------------------

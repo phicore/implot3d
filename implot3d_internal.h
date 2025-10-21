@@ -728,11 +728,7 @@ struct ImPlot3DPlot {
 
     // Applies equal aspect ratio constraint using the specified axis as reference.
     // Other axes are adjusted to match the reference axis's aspect ratio (units per NDC unit).
-    void ApplyEqualConstraint(ImAxis3D ref_axis);
-
-    // Applies equal aspect ratio constraint automatically selecting the axis with the highest aspect ratio as reference.
-    // This ensures all data remains visible and centered, making it ideal for data fitting operations.
-    void ApplyEqualConstraint();
+    void ApplyEqualAspect(ImAxis3D ref_axis);
 };
 
 struct ImPlot3DContext {
