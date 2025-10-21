@@ -2233,49 +2233,45 @@ void HandleInput(ImPlot3DPlot& plot) {
         ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, plot.ID);
         if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || IO.MouseWheel != 0.0f) {
             float delta = ImGui::IsMouseDown(ImGuiMouseButton_Middle) ? (-0.01f * IO.MouseDelta.y) : (-0.1f * IO.MouseWheel);
-            float zoom = 1.0f + delta;
+            float zoom_factor = 1.0f + delta;
+
+            // Zoom all hovered axes independently
+            ImAxis3D ref_axis = ImAxis3D_X;
             for (int i = 0; i < 3; i++) {
+                if (!plot.Axes[i].Hovered || plot.Axes[i].IsInputLocked())
+                    continue;
+
                 ImPlot3DAxis& axis = plot.Axes[i];
                 float size = axis.Range.Max - axis.Range.Min;
-                float new_min, new_max;
-                if (hovered_axis != -1 || hovered_plane != -1) {
-                    // If mouse over the plot box, zoom around the mouse plot position
-                    float new_size = size * zoom;
+                float new_size = size * zoom_factor;
 
-                    // Calculate offset ratio of the mouse position relative to the axis range
+                const bool zoom_around_mouse = (hovered_axis != -1 || hovered_plane != -1);
+                if (zoom_around_mouse) {
+                    // Zoom around the mouse plot position
                     float offset = mouse_pos_plot[i] - axis.Range.Min;
                     float ratio = offset / size;
-
-                    // Adjust the axis range to zoom around the mouse position
-                    new_min = mouse_pos_plot[i] - new_size * ratio;
-                    new_max = mouse_pos_plot[i] + new_size * (1.0f - ratio);
+                    axis.SetMin(mouse_pos_plot[i] - new_size * ratio);
+                    axis.SetMax(mouse_pos_plot[i] + new_size * (1.0f - ratio));
                 } else {
-                    // If mouse is not over the plot box, zoom around the plot center
+                    // Zoom around center
                     float center = (axis.Range.Min + axis.Range.Max) * 0.5f;
-
-                    // Adjust the axis range to zoom around plot center
-                    new_min = center - zoom * size * 0.5f;
-                    new_max = center + zoom * size * 0.5f;
+                    axis.SetMin(center - new_size * 0.5f);
+                    axis.SetMax(center + new_size * 0.5f);
                 }
+                axis.Held = true;
 
-                // Set new range after zoom
-                if (plot.Axes[i].Hovered) {
-                    if (!plot.Axes[i].IsInputLocked()) {
-                        // Update axis range
-                        plot.Axes[i].SetMin(new_min);
-                        plot.Axes[i].SetMax(new_max);
-                        // Apply equal aspect ratio constraint
-                        if (axis_equal)
-                            plot.ApplyEqualConstraint(i);
-                    }
-                    plot.Axes[i].Held = true;
-                }
+                // Use a hovered axis as reference
+                ref_axis = (ImAxis3D)i;
+            }
 
-                // If no axis was held before (user started zoom in this frame), set the held edge/plane indices
-                if (!any_axis_held) {
-                    plot.HeldEdgeIdx = hovered_edge_idx;
-                    plot.HeldPlaneIdx = hovered_plane_idx;
-                }
+            // Apply equal constraint using the reference axis
+            if (axis_equal)
+                plot.ApplyEqualConstraint(ref_axis);
+
+            // If no axis was held before (user started zoom in this frame), set the held edge/plane indices
+            if (!any_axis_held) {
+                plot.HeldEdgeIdx = hovered_edge_idx;
+                plot.HeldPlaneIdx = hovered_plane_idx;
             }
         }
     }
