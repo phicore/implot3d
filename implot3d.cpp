@@ -1284,7 +1284,7 @@ void ShowAxisContextMenu(ImPlot3DPlot& plot, ImAxis3D axis_id) {
         axis.SetMin(temp_min, true);
         // Apply equal aspect if needed
         if (equal_aspect)
-            plot.ApplyEqualAspect(axis_id);
+            plot.ApplyEqualConstraint(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1298,7 +1298,7 @@ void ShowAxisContextMenu(ImPlot3DPlot& plot, ImAxis3D axis_id) {
         axis.SetMax(temp_max, true);
         // Apply equal aspect if needed
         if (equal_aspect)
-            plot.ApplyEqualAspect(axis_id);
+            plot.ApplyEqualConstraint(axis_id);
     }
     ImGui::EndDisabled();
 
@@ -1481,17 +1481,20 @@ void EndPlot() {
     // Handle data fitting
     if (plot.FitThisFrame) {
         plot.FitThisFrame = false;
+
+        // First, apply fit to all axes
         for (int i = 0; i < 3; i++) {
             if (plot.Axes[i].FitThisFrame) {
-                // Perform axis fitting
                 plot.Axes[i].FitThisFrame = false;
                 plot.Axes[i].ApplyFit();
-                // Apply equal aspect constraint
-                const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
-                if (axis_equal)
-                    plot.ApplyEqualAspect(i);
             }
         }
+
+        // Then, apply equal aspect constraint if enabled
+        // This ensures data remains centered and visible
+        const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+        if (axis_equal)
+            plot.ApplyEqualConstraint();
     }
 
     // Lock setup if not already done
@@ -1599,7 +1602,7 @@ void SetupAxisLimits(ImAxis3D idx, double min_lim, double max_lim, ImPlot3DCond 
         axis.FitThisFrame = false;
         // Apply equal aspect ratio constraint if needed
         if (ImHasFlag(plot.Flags, ImPlot3DFlags_Equal))
-            plot.ApplyEqualAspect(idx);
+            plot.ApplyEqualConstraint(idx);
     }
 }
 
@@ -2092,7 +2095,7 @@ void HandleInput(ImPlot3DPlot& plot) {
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
                         // Apply equal aspect ratio constraint
                         if (axis_equal)
-                            plot.ApplyEqualAspect(i);
+                            plot.ApplyEqualConstraint(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2121,7 +2124,7 @@ void HandleInput(ImPlot3DPlot& plot) {
                         plot.Axes[i].SetMax(plot.Axes[i].Range.Max - delta_plot[i]);
                         // Apply equal aspect ratio constraint
                         if (axis_equal)
-                            plot.ApplyEqualAspect(i);
+                            plot.ApplyEqualConstraint(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2263,7 +2266,7 @@ void HandleInput(ImPlot3DPlot& plot) {
                         plot.Axes[i].SetMax(new_max);
                         // Apply equal aspect ratio constraint
                         if (axis_equal)
-                            plot.ApplyEqualAspect(i);
+                            plot.ApplyEqualConstraint(i);
                     }
                     plot.Axes[i].Held = true;
                 }
@@ -2348,12 +2351,8 @@ void SetupLock() {
         double xar = plot.Axes[ImAxis3D_X].GetAspect();
         double yar = plot.Axes[ImAxis3D_Y].GetAspect();
         double zar = plot.Axes[ImAxis3D_Z].GetAspect();
-        if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar)) {
-            double avg = (xar + yar + zar) / 3.0;
-            plot.Axes[ImAxis3D_X].SetAspect(avg);
-            plot.Axes[ImAxis3D_Y].SetAspect(avg);
-            plot.Axes[ImAxis3D_Z].SetAspect(avg);
-        }
+        if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar))
+            plot.ApplyEqualConstraint();
     }
 
     // Compute ticks
@@ -3465,13 +3464,34 @@ float ImPlot3DPlot::GetViewScale() const {
 
 ImPlot3DPoint ImPlot3DPlot::GetBoxScale() const { return ImPlot3DPoint(Axes[0].NDCSize(), Axes[1].NDCSize(), Axes[2].NDCSize()); }
 
-void ImPlot3DPlot::ApplyEqualAspect(ImAxis3D ref_axis) {
+void ImPlot3DPlot::ApplyEqualConstraint(ImAxis3D ref_axis) {
     double aspect = Axes[ref_axis].GetAspect();
     for (int i = 0; i < 3; i++) {
         if (i != ref_axis && !Axes[i].IsInputLocked()) {
             Axes[i].SetAspect(aspect);
         }
     }
+}
+
+void ImPlot3DPlot::ApplyEqualConstraint() {
+    // Find the axis with the highest aspect ratio (units per NDC unit)
+    // This axis will require the most space and should be used as reference
+    ImAxis3D ref_axis = ImAxis3D_X;
+    double max_aspect = 0.0;
+
+    for (int i = 0; i < 3; i++) {
+        if (!Axes[i].IsInputLocked()) {
+            double aspect = Axes[i].GetAspect();
+            if (aspect > max_aspect) {
+                max_aspect = aspect;
+                ref_axis = (ImAxis3D)i;
+            }
+        }
+    }
+
+    // Apply equal aspect using the reference axis with highest aspect ratio
+    // This ensures all data remains visible and centered
+    ApplyEqualConstraint(ref_axis);
 }
 
 //-----------------------------------------------------------------------------
@@ -3509,13 +3529,20 @@ void ShowTicksMetrics(const ImPlot3DTicker& ticker) { ImGui::BulletText("Size: %
 void ShowAxisMetrics(const ImPlot3DAxis& axis) {
     ImGui::BulletText("Label: %s", axis.GetLabel());
     ImGui::BulletText("Flags: 0x%08X", axis.Flags);
+    // Range
     ImGui::BulletText("Range: [%f,%f]", axis.Range.Min, axis.Range.Max);
-
+    ImGui::BulletText("NDC Scale: %f", axis.NDCScale);
+    ImGui::BulletText("NDC Range: [%f,%f]", -0.5f * axis.NDCScale, 0.5f * axis.NDCScale);
+    ImGui::BulletText("Aspect: %f", axis.GetAspect());
+    // Ticks
     ImGui::BulletText("ShowDefaultTicks: %s", axis.ShowDefaultTicks ? "true" : "false");
+    // Fit data
     ImGui::BulletText("FitThisFrame: %s", axis.FitThisFrame ? "true" : "false");
     ImGui::BulletText("FitExtents: [%f,%f]", axis.FitExtents.Min, axis.FitExtents.Min);
+    // Constraints
     ImGui::BulletText("ConstraintRange: [%f,%f]", axis.ConstraintRange.Min, axis.ConstraintRange.Min);
     ImGui::BulletText("ConstraintZoom: [%f,%f]", axis.ConstraintZoom.Min, axis.ConstraintZoom.Min);
+    // User input
     ImGui::BulletText("Hovered: %s", axis.Hovered ? "true" : "false");
     ImGui::BulletText("Held: %s", axis.Held ? "true" : "false");
 

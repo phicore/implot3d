@@ -726,8 +726,13 @@ struct ImPlot3DPlot {
     // Returns the scale of the plot box in each dimension
     ImPlot3DPoint GetBoxScale() const;
 
-    // Sets the aspect ratio of the plot box to be equal in all dimensions, using the provided axis as reference for scaling
-    void ApplyEqualAspect(ImAxis3D ref_axis);
+    // Applies equal aspect ratio constraint using the specified axis as reference.
+    // Other axes are adjusted to match the reference axis's aspect ratio (units per NDC unit).
+    void ApplyEqualConstraint(ImAxis3D ref_axis);
+
+    // Applies equal aspect ratio constraint automatically selecting the axis with the highest aspect ratio as reference.
+    // This ensures all data remains visible and centered, making it ideal for data fitting operations.
+    void ApplyEqualConstraint();
 };
 
 struct ImPlot3DContext {
