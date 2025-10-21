@@ -784,7 +784,7 @@ void DemoPlotFlags() {
 
     if (ImPlot3D::BeginPlot("Plot Flags Demo", ImVec2(-1, 0), flags)) {
         ImPlot3D::SetupAxes("X-axis", "Y-axis", "Z-axis");
-        ImPlot3D::SetupAxesLimits(-5, 5, -5, 5, -5, 5);
+        ImPlot3D::SetupAxesLimits(-10, 10, -10, 10, -5, 5);
 
         // Generate some sample data for demonstration
         static float x[100], y[100], z[100];
@@ -802,9 +802,9 @@ void DemoPlotFlags() {
         ImPlot3D::PlotLine("Helix", x, y, z, 100);
 
         // Add some scatter points to show equal scaling effect
-        float scatter_x[8] = {-4, 4, -4, 4, -4, 4, -4, 4};
-        float scatter_y[8] = {-4, -4, 4, 4, -4, -4, 4, 4};
-        float scatter_z[8] = {-4, -4, -4, -4, 4, 4, 4, 4};
+        float scatter_x[8] = {-10, 10, -10, 10, -10, 10, -10, 10};
+        float scatter_y[8] = {-10, -10, 10, 10, -10, -10, 10, 10};
+        float scatter_z[8] = {-5, -5, -5, -5, 5, 5, 5, 5};
         ImPlot3D::PlotScatter("Cube corners", scatter_x, scatter_y, scatter_z, 8);
 
         ImPlot3D::EndPlot();

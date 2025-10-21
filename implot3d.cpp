@@ -1481,16 +1481,40 @@ void EndPlot() {
     // Handle data fitting
     if (plot.FitThisFrame) {
         plot.FitThisFrame = false;
-        for (int i = 0; i < 3; i++) {
-            if (plot.Axes[i].FitThisFrame) {
-                // Perform axis fitting
-                plot.Axes[i].FitThisFrame = false;
-                plot.Axes[i].ApplyFit();
-                // Apply equal aspect constraint
-                const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
-                if (axis_equal)
-                    plot.ApplyEqualAspect(i);
+
+        const bool axis_equal = ImHasFlag(plot.Flags, ImPlot3DFlags_Equal);
+        if (!axis_equal) {
+            // Apply fit to all axes independently
+            for (int i = 0; i < 3; i++) {
+                if (plot.Axes[i].FitThisFrame) {
+                    plot.Axes[i].FitThisFrame = false;
+                    plot.Axes[i].ApplyFit();
+                }
             }
+        } else {
+            // Find the fitted axis with the highest aspect ratio (units per NDC unit) after fit
+            // This axis will require the most space and should be used as reference
+            ImAxis3D ref_axis = ImAxis3D_X;
+            double max_aspect = 0.0;
+
+            // First, apply fit to all axes
+            for (int i = 0; i < 3; i++) {
+                if (plot.Axes[i].FitThisFrame) {
+                    plot.Axes[i].FitThisFrame = false;
+                    plot.Axes[i].ApplyFit();
+
+                    // Get aspect ratio for this axis
+                    double aspect = plot.Axes[i].GetAspect();
+                    if (aspect > max_aspect) {
+                        max_aspect = aspect;
+                        ref_axis = (ImAxis3D)i;
+                    }
+                }
+            }
+
+            // Then, apply equal aspect constraint if enabled
+            // This ensures data remains centered and visible
+            plot.ApplyEqualAspect(ref_axis);
         }
     }
 
@@ -2036,8 +2060,52 @@ void HandleInput(ImPlot3DPlot& plot) {
         mouse_plane = ImPlane3D_YZ;
     else if (plot.Axes[0].Hovered && plot.Axes[2].Hovered)
         mouse_plane = ImPlane3D_XZ;
-    else if (plot.Axes[2].Hovered)
-        mouse_plane = ImPlane3D_YZ;
+    else if (plot.Axes[0].Hovered && plot.Axes[1].Hovered)
+        mouse_plane = ImPlane3D_XY;
+    else if (plot.HeldEdgeIdx != -1 || hovered_edge_idx != -1) {
+        // Single axis hovered: use the edge index and active faces to pick the visible plane
+        // Each edge belongs to exactly 2 faces. We pick the active (visible) one.
+
+        // If the user is holding an edge, use that index; otherwise, use the hovered edge index
+        int curr_edge_idx = plot.HeldEdgeIdx != -1 ? plot.HeldEdgeIdx : hovered_edge_idx;
+
+        // Map edge index to the two faces it belongs to, and corresponding plane
+        // Format: {face_index, plane_enum}
+        static const int edge_to_faces[12][2][2] = {
+            {{1, ImPlane3D_XZ}, {2, ImPlane3D_XY}}, // Edge 0: Y-min face, Z-min face
+            {{2, ImPlane3D_XY}, {3, ImPlane3D_YZ}}, // Edge 1: Z-min face, X-max face
+            {{2, ImPlane3D_XY}, {4, ImPlane3D_XZ}}, // Edge 2: Z-min face, Y-max face
+            {{0, ImPlane3D_YZ}, {2, ImPlane3D_XY}}, // Edge 3: X-min face, Z-min face
+            {{1, ImPlane3D_XZ}, {5, ImPlane3D_XY}}, // Edge 4: Y-min face, Z-max face
+            {{3, ImPlane3D_YZ}, {5, ImPlane3D_XY}}, // Edge 5: X-max face, Z-max face
+            {{4, ImPlane3D_XZ}, {5, ImPlane3D_XY}}, // Edge 6: Y-max face, Z-max face
+            {{0, ImPlane3D_YZ}, {5, ImPlane3D_XY}}, // Edge 7: X-min face, Z-max face
+            {{0, ImPlane3D_YZ}, {1, ImPlane3D_XZ}}, // Edge 8: X-min face, Y-min face
+            {{1, ImPlane3D_XZ}, {3, ImPlane3D_YZ}}, // Edge 9: Y-min face, X-max face
+            {{3, ImPlane3D_YZ}, {4, ImPlane3D_XZ}}, // Edge 10: X-max face, Y-max face
+            {{0, ImPlane3D_YZ}, {4, ImPlane3D_XZ}}, // Edge 11: X-min face, Y-max face
+        };
+
+        // Check which of the two faces is active (visible from camera)
+        int face0 = edge_to_faces[curr_edge_idx][0][0];
+        int face1 = edge_to_faces[curr_edge_idx][1][0];
+
+        // Determine which face is active based on active_faces
+        // Faces 0-2 are min faces (active when active_faces[i] == false)
+        // Faces 3-5 are max faces (active when active_faces[i] == true)
+        bool face0_active = (face0 < 3) ? !active_faces[face0] : active_faces[face0 - 3];
+        bool face1_active = (face1 < 3) ? !active_faces[face1] : active_faces[face1 - 3];
+
+        // Pick the plane corresponding to the active face
+        if (face0_active) {
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][0][1];
+        } else if (face1_active) {
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][1][1];
+        } else {
+            // Fallback: both could be active in some edge cases, use first one
+            mouse_plane = (ImPlane3D)edge_to_faces[curr_edge_idx][0][1];
+        }
+    }
     ImVec2 mouse_pos = ImGui::GetMousePos();
     ImPlot3DPoint mouse_pos_plot = PixelsToPlotPlane(mouse_pos, mouse_plane, false);
 
@@ -2230,49 +2298,45 @@ void HandleInput(ImPlot3DPlot& plot) {
         ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, plot.ID);
         if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || IO.MouseWheel != 0.0f) {
             float delta = ImGui::IsMouseDown(ImGuiMouseButton_Middle) ? (-0.01f * IO.MouseDelta.y) : (-0.1f * IO.MouseWheel);
-            float zoom = 1.0f + delta;
+            float zoom_factor = 1.0f + delta;
+
+            // Zoom all hovered axes independently
+            ImAxis3D ref_axis = ImAxis3D_X;
             for (int i = 0; i < 3; i++) {
+                if (!plot.Axes[i].Hovered || plot.Axes[i].IsInputLocked())
+                    continue;
+
                 ImPlot3DAxis& axis = plot.Axes[i];
                 float size = axis.Range.Max - axis.Range.Min;
-                float new_min, new_max;
-                if (hovered_axis != -1 || hovered_plane != -1) {
-                    // If mouse over the plot box, zoom around the mouse plot position
-                    float new_size = size * zoom;
+                float new_size = size * zoom_factor;
 
-                    // Calculate offset ratio of the mouse position relative to the axis range
+                const bool zoom_around_mouse = (hovered_axis != -1 || hovered_plane != -1);
+                if (zoom_around_mouse) {
+                    // Zoom around the mouse plot position
                     float offset = mouse_pos_plot[i] - axis.Range.Min;
                     float ratio = offset / size;
-
-                    // Adjust the axis range to zoom around the mouse position
-                    new_min = mouse_pos_plot[i] - new_size * ratio;
-                    new_max = mouse_pos_plot[i] + new_size * (1.0f - ratio);
+                    axis.SetMin(mouse_pos_plot[i] - new_size * ratio);
+                    axis.SetMax(mouse_pos_plot[i] + new_size * (1.0f - ratio));
                 } else {
-                    // If mouse is not over the plot box, zoom around the plot center
+                    // Zoom around center
                     float center = (axis.Range.Min + axis.Range.Max) * 0.5f;
-
-                    // Adjust the axis range to zoom around plot center
-                    new_min = center - zoom * size * 0.5f;
-                    new_max = center + zoom * size * 0.5f;
+                    axis.SetMin(center - new_size * 0.5f);
+                    axis.SetMax(center + new_size * 0.5f);
                 }
+                axis.Held = true;
 
-                // Set new range after zoom
-                if (plot.Axes[i].Hovered) {
-                    if (!plot.Axes[i].IsInputLocked()) {
-                        // Update axis range
-                        plot.Axes[i].SetMin(new_min);
-                        plot.Axes[i].SetMax(new_max);
-                        // Apply equal aspect ratio constraint
-                        if (axis_equal)
-                            plot.ApplyEqualAspect(i);
-                    }
-                    plot.Axes[i].Held = true;
-                }
+                // Use a hovered axis as reference
+                ref_axis = (ImAxis3D)i;
+            }
 
-                // If no axis was held before (user started zoom in this frame), set the held edge/plane indices
-                if (!any_axis_held) {
-                    plot.HeldEdgeIdx = hovered_edge_idx;
-                    plot.HeldPlaneIdx = hovered_plane_idx;
-                }
+            // Apply equal constraint using the reference axis
+            if (axis_equal)
+                plot.ApplyEqualAspect(ref_axis);
+
+            // If no axis was held before (user started zoom in this frame), set the held edge/plane indices
+            if (!any_axis_held) {
+                plot.HeldEdgeIdx = hovered_edge_idx;
+                plot.HeldPlaneIdx = hovered_plane_idx;
             }
         }
     }
@@ -2349,10 +2413,10 @@ void SetupLock() {
         double yar = plot.Axes[ImAxis3D_Y].GetAspect();
         double zar = plot.Axes[ImAxis3D_Z].GetAspect();
         if (!ImAlmostEqual(xar, yar) || !ImAlmostEqual(xar, zar)) {
-            double avg = (xar + yar + zar) / 3.0;
-            plot.Axes[ImAxis3D_X].SetAspect(avg);
-            plot.Axes[ImAxis3D_Y].SetAspect(avg);
-            plot.Axes[ImAxis3D_Z].SetAspect(avg);
+            double aspect = (xar + yar + zar) / 3.0;
+            plot.Axes[ImAxis3D_X].SetAspect(aspect);
+            plot.Axes[ImAxis3D_Y].SetAspect(aspect);
+            plot.Axes[ImAxis3D_Z].SetAspect(aspect);
         }
     }
 
@@ -3509,13 +3573,20 @@ void ShowTicksMetrics(const ImPlot3DTicker& ticker) { ImGui::BulletText("Size: %
 void ShowAxisMetrics(const ImPlot3DAxis& axis) {
     ImGui::BulletText("Label: %s", axis.GetLabel());
     ImGui::BulletText("Flags: 0x%08X", axis.Flags);
+    // Range
     ImGui::BulletText("Range: [%f,%f]", axis.Range.Min, axis.Range.Max);
-
+    ImGui::BulletText("NDC Scale: %f", axis.NDCScale);
+    ImGui::BulletText("NDC Range: [%f,%f]", -0.5f * axis.NDCScale, 0.5f * axis.NDCScale);
+    ImGui::BulletText("Aspect: %f", axis.GetAspect());
+    // Ticks
     ImGui::BulletText("ShowDefaultTicks: %s", axis.ShowDefaultTicks ? "true" : "false");
+    // Fit data
     ImGui::BulletText("FitThisFrame: %s", axis.FitThisFrame ? "true" : "false");
     ImGui::BulletText("FitExtents: [%f,%f]", axis.FitExtents.Min, axis.FitExtents.Min);
+    // Constraints
     ImGui::BulletText("ConstraintRange: [%f,%f]", axis.ConstraintRange.Min, axis.ConstraintRange.Min);
     ImGui::BulletText("ConstraintZoom: [%f,%f]", axis.ConstraintZoom.Min, axis.ConstraintZoom.Min);
+    // User input
     ImGui::BulletText("Hovered: %s", axis.Hovered ? "true" : "false");
     ImGui::BulletText("Held: %s", axis.Held ? "true" : "false");
 
